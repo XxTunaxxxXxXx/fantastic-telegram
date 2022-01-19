@@ -78,7 +78,6 @@ if __name__ == "__main__":
                 else:
                     i += 1
         input('\nDone, press enter')
-    sys.exit(__main__)
     
 
 
