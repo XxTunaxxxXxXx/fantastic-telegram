@@ -1,7 +1,7 @@
 # fantastic-telegram
 Test project
 
-Unable to find an existing list matching carOrinal to each unique car. So set up this project to test things and start building a catalogue json file.
+Unable to find an existing list matching carOrdinal to each unique car. So set up this project to test things and start building a catalogue json file.
 
 Script sets up a quick server to listen for incoming udp info from Forza Horizon 5, and has a background thread constantly updating a carOrdinal variable.
 Simple terminal prompt entrys to save ordinal, skip car, or save file and quit. 
