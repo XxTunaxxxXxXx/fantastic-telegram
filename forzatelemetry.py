@@ -84,6 +84,7 @@ class Telemetry():
         self.serverSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.serverSock.bind((self.local_ip, self.port))
         print('[SERVER STARTING]\n[WAITING TO RECIEVE DATA]')
+        self.dataRefresh()
         
     def dataRefresh(self): #get specified byte by index and size
         self.data_in, self.addr =  self.serverSock.recvfrom(324) #return raw byte data from UDP transmission
@@ -270,9 +271,12 @@ class Telemetry():
 
     def getCarOrdinal(self):        #Unique ID of the car make/model
         return self.data_out[53]
-    def getCarClass(self):          #Between 0 (D -- worst cars) and 7 (X class -- best cars) inclusive
+    def getCarClass(self):          #Between 0 (D -- worst cars) and 6 (X class -- best cars) inclusive
         if self.data_out[54] == 0:
-            return 'D'
+            if self.data_out[53] == 0: #check carOrdinal for 0 to verify if D class or no data/in menu
+                return 0     #return 0 if in menu
+            else:
+                return 'D'   #return D if actually in a D class car
         elif self.data_out[54] == 1:
             return 'C'
         elif self.data_out[54] == 2:
@@ -318,19 +322,19 @@ class Telemetry():
 
     def getSpeed(self, unit='default'):             #meters per second by default
         if unit == 'mph':
-            return 2.237*self.data_out[64]          #return as mph
+            return round(2.237*self.data_out[64],2)         #return as mph
         elif unit == 'kph':
-            return  3.6*self.data_out[64]           #return as kph
+            return  round(3.6*self.data_out[64],2)           #return as kph
         else: 
             return self.data_out[64]
     def getPower(self, unit='default'):             #watts by default
         if unit == 'hp':                            #return as horsepower
-            return self.data_out[65]/746
+            return round(self.data_out[65]/746,2)
         else:
             return self.data_out[65]
     def getTorque(self, unit='default'):            #newton meter by default
         if unit == 'ftlb':
-            return self.data_out[66]/1.356          #return as foot pounds
+            return round(self.data_out[66]/1.356,2)        #return as foot pounds
         else:
             return self.data_out[66]                    
 
