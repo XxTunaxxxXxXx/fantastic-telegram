@@ -1,51 +1,122 @@
+#Telemetry server for using the data out option in Forza Horizon 5.  
+#Not all formatted options have been throughly tested yet, but all default outputs are correct.
+#
+#
+#quick example of use
+#forzaData = Telemetry()
+#forzaData.startServer(5300) - whatever valid port number will work 
+#forzaData.dataRefresh()  - Will only refresh data a single time, if you're just doing a quick single data pull 
+#print (forzaData.getCarOrdinal())
+#
+#forzaData.dataLoop() will set a background thread to loop data updates constantly
+#set self.loop = False to end loop. Don't set to True outside of thread.
+#
+
 import socket
 import struct
+import csv 
+import threading
 
-def convertMillis(millis):
+#random null byte for testing
+#initbyte =  b"\x00\x00\x00\x00\x00\x000\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+
+def convertMillis(millis):          #for timestampms readout
     seconds=round((millis/1000)%60,2)
     minutes=round((millis/(1000*60))%60)
     hours=round((millis/(1000*60*60))%24)
     return f'{hours}h:{minutes}m:{seconds}s'
 
-#starts server process to listen to incoming udp data from Horizon 5
-class ForzaListen():
-    def __init__(self,port):
-        self.port = port
+name_list = [   #for logging
+    #Race, time, and RPM info
+    "is_race_on","time_stamp","max_rpm","idle_rpm","current_rpm",
+    #Acceleration in 3 axes
+     "x_accel","y_accel","z_accel",
+    #Velocity in 3 axes
+     "x_velocity","y_velocity","z_velocity",
+    #Angular Velocity in 3 axes
+     "x_ang_velocity","y_ang_velocity","z_ang_velocity",
+    #Rotation
+     "yaw","pitch","roll",
+     #suspension
+     "suspension_travel_front_left","suspension_travel_front_right","suspension_travel_rear_left","suspension_travel_rear_right",
+     #tireslip
+     "tire_slip_ratio_front_left","tire_slip_ratio_front_right","tire_slip_ratio_rear_left","tire_slip_ratio_rear_right",
+     #wheelspeed
+     "wheel_speed_front_left","wheel_speed_front_right","wheel_speed_rear_left","wheel_speed_rear_right",
+     #wheelrumble
+     "wheel_rumblestrip_speed_front_left","wheel_rumblestrip_speed_front_right","wheel_rumblestrip_speed_rear_left","wheel_rumblestrip_speed_rear_right",
+    #WHEEL IN PUDDLE DEPTH#
+     "wheel_in_puddle_depth_front_left","wheel_in_puddle_depth_front_right","wheel_in_puddle_depth_rear_left","wheel_in_puddle_depth_rear_right",
+    #SURFACE RUMBLE#
+     "surface_rumble_front_left","surface_rumble_front_right","surface_rumble_rear_left","surface_rumble_rear_right",
+    #TIRE SLIP ANGLE#
+     "tire_slip_angle_front_left","tire_slip_angle_front_right","tire_slip_angle_rear_left","tire_slip_angle_rear_right",
+    #TIRE COMBINED SLIP#
+     "tire_combined_slip_front_left","tire_combined_slip_front_right","tire_combined_slip_rear_left","tire_combined_slip_rear_right",
+    #SUSPENSION TRAVEL METERS#
+     "suspension_travel_meters_front_left","suspension_travel_meters_front_right","suspension_travel_meters_rear_left","suspension_travel_meters_rear_right",
+    #VEHICLE STATS#
+     "car_ordinal","car_class","car_pi","drivetrain","num_cylinders","car_category","unknown_1","unknown_2",
+    #POSITION AXIS#
+     "x_position","y_position","z_position",
+    #VEHICLE ENGINE STATS#
+     "engine_speed","engine_power","engine_torque",
+    #TIRE TEMP#
+     "tire_temp_front_left","tire_temp_front_right","tire_temp_rear_left","tire_temp_rear_right",
+    #RACE STATS#
+     "boost","fuel","distance_traveled","best_lap","last_lap","current_lap","current_race_time","lap_num","race_position",
+    #MISC#
+     "accelerator_position","brake_position","clutch_position","handbrake_position","gear","steering_position","driving_line","ai_brake_difference",
+    ]
+
+class Telemetry():
+    def __init__(self):
+        self.loop = False #variable for thread looping     
         self.hostname = socket.gethostname()          
         self.local_ip = socket.gethostbyname(self.hostname)#local ip to be used in Forza (eg 192.168.1.17)
-
-    def setLocalIp(self, local_ip): #if you need to use a different ip than gathered by gethostbyname
-        self.local_ip = local_ip
     
-    def start(self): #open socket to watch for udp data from horizon 5
+    def setLocalIP(self,ip_address): #if for some reason ip set by gethostname doesn't work
+        self.local_ip = ip_address 
+
+    def startServer(self, port):
+        self.port = port
         self.serverSock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.serverSock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.serverSock.bind((self.local_ip, self.port))
-        print('\n[SERVER STARTING]\n[WAITING TO RECIEVE DATA]\n')
+        print('[SERVER STARTING]\n[WAITING TO RECIEVE DATA]')
+        
+    def dataRefresh(self): #get specified byte by index and size
+        self.data_in, self.addr =  self.serverSock.recvfrom(324) #return raw byte data from UDP transmission
+        self.data_out = struct.unpack("iifffffffffffffffffffffffffffffffffffffffffffffffffffiiiiiiiifffffffffffffffffHbbbbbbbBbb", self.data_in)
+        if self.loop == True:
+            while self.loop == True:
+                self.data_in, self.addr = self.serverSock.recvfrom(324) #return raw byte data from UDP transmission
+                self.data_out = struct.unpack("iifffffffffffffffffffffffffffffffffffffffffffffffffffiiiiiiiifffffffffffffffffHbbbbbbbBbb", self.data_in)
+        return
 
-    def recieve(self):  #return raw byte data from UDP transmission
-        self.data, self.addr = self.serverSock.recvfrom(324)
-        return self.data
+    def dataLoop(self): #loop data refresh set self.loop = False to end
+        self.loop = True
+        self.thread = threading.Thread(target=self.dataRefresh, daemon=True)
+        self.thread.start()
+        return
 
-#takes data from ForzaListen to be available as telemtry output
-class Telemetry():
-    def __init__(self):
-        self.data_out = []
-        self.loop = False # outside variable for thread looping
+    def dataLog(self, filename='log.csv'):       #save incomming data to log
+        d = dict(zip(name_list,self.data_out))
+        #not finished
+        return
 
-    def dataRefresh(self, data_in): #get specified byte by index and size
-        self.data_out = struct.unpack("iifffffffffffffffffffffffffffffffffffffffffffffffffffiiiiiiiifffffffffffffffffHbbbbbbbBbb", data_in)
-        return self.data_out
-
-    def getIsRaceOn(self):
+    def getIsRaceOn(self):                 #returns 0 if false, 1 if true
         if self.data_out[0] == 0:
             return False
-        if self.data_out[0] == 1:
+        elif self.data_out[0] == 1:
             return True
-    def getTimeStampMS(self): 
-        return self.data_out[1]
-    def getTimeStampConverted(self):
-        return convertMillis(self.data_out[1]) #returns as {hours}h:{minutes}m:{seconds}s to be easier to read
+    def getTimeStampMS(self, unit='default'): #returns a timestamp in miliseconds
+        if unit == 'formatted':
+            return convertMillis(self.data_out[1]) #returns as {hours}h:{minutes}m:{seconds}s to be easier to read
+        elif unit == 'default':
+            return self.data_out[1]
+        else:
+            return 'Null'
     
     def getEngineMaxRPM(self): 
         return round(self.data_out[2])
@@ -86,14 +157,33 @@ class Telemetry():
         return self.data_out[16]
 
     #Suspension travel normalized: 0.0f = max stretch; 1.0 = max compression
-    def getNormalizedSuspensionTravelFrontLeft(self): 
-        return self.data_out[17]
-    def getNormalizedSuspensionTravelFrontRight(self): 
-        return self.data_out[18]
-    def getNormalizedSuspensionTravelRearLeft(self): 
-        return self.data_out[19]
-    def getNormalizedSuspensionTravelRearRight(self): 
-        return self.data_out[20]
+    #formatted returns output at 0-100%
+    def getNormalizedSuspensionTravelFrontLeft(self, unit='default'): 
+        if unit == 'formatted':
+            unit = f'{round(self.data_out[17]*100,2)}%'
+            return unit
+        elif unit == 'default':
+            return self.data_out[17]
+    def getNormalizedSuspensionTravelFrontRight(self, unit='default'): 
+        if unit == 'formatted':
+            unit = f'{round(self.data_out[18]*100,2)}%'
+            return unit
+        elif unit == 'default':
+            return self.data_out[18]
+    def getNormalizedSuspensionTravelRearLeft(self, unit='default'): 
+        if unit == 'formatted':
+            unit = f'{round(self.data_out[19]*100,2)}%'
+            return unit
+        elif unit == 'default':
+            return self.data_out[19]
+    def getNormalizedSuspensionTravelRearRight(self, unit='default'): 
+        if unit == 'formatted':
+            unit = f'{round(self.data_out[20]*100,2)}%'
+            return unit
+        elif unit == 'default':
+            return self.data_out[20]
+        else:
+            return 'Null'
 
     #Tire normalized slip ratio, = 0 means 100% grip and |ratio| > 1.0 means loss of grip
     def getTireSlipRatioFrontLeft(self): 
@@ -114,6 +204,9 @@ class Telemetry():
         return self.data_out[27]
     def getWheelRotationSpeedRearRight(self): 
         return self.data_out[28]
+    def getWheelRotationAverage(self):
+        average = (self.data_out[25]+self.data_out[26]+self.data_out[27]+self.data_out[28])/4
+        return average
 
     #1 when wheel is on rumble strip, = 0 when off.
     def getWheelOnRumbleStripFrontLeft(self): 
@@ -178,18 +271,41 @@ class Telemetry():
     def getCarOrdinal(self):        #Unique ID of the car make/model
         return self.data_out[53]
     def getCarClass(self):          #Between 0 (D -- worst cars) and 7 (X class -- best cars) inclusive
-        return self.data_out[54]
+        if self.data_out[54] == 0:
+            return 'D'
+        elif self.data_out[54] == 1:
+            return 'C'
+        elif self.data_out[54] == 2:
+            return 'B'
+        elif self.data_out[54] == 3:
+            return 'A'
+        elif self.data_out[54] == 4:
+            return 'S1'
+        elif self.data_out[54] == 5:
+            return 'S2'
+        elif self.data_out[54] == 6:
+            return 'X'
+        else:
+            return 'Null'
     def getCarPerformance(self):    #Between 100 (slowest car) and 999 (fastest car) inclusive
         return self.data_out[55]
-    def getDriveTrain(self):        #Corresponds to EDrivetrainType; 0 = FWD, 1 = RWD, 2 = AWD
+    def getDriveTrain(self):        #Corresponds to Drivetrain Type; 0 = FWD, 1 = RWD, 2 = AWD
+        if self.data_out[56] == 0:
+            return 'FWD'
+        elif self.data_out[56] == 1:
+            return 'RWD'
+        elif self.data_out[56] == 2:
+            return 'AWD'
+        else:
+            return 'Null'
         return self.data_out[56]
     def getNumberOfCylinders(self): #Number of cylinders in the engine
         return self.data_out[57]
     def getCarCategory(self):       #
         return self.data_out[58]
-    def getUnknown1(self):          #
+    def getUnknown1(self):          #Unknown value
         return self.data_out[59]
-    def getUnknown2(self):          #
+    def getUnknown2(self):          #Unknown value
         return self.data_out[60]
 
     #Position (meters) on map
@@ -218,7 +334,7 @@ class Telemetry():
         else:
             return self.data_out[66]                    
 
-    #return as Farenheit
+    #return as 
     def getTireTempFrontLeft(self): 
         return self.data_out[67]
     def getTireTempFrontRight(self): 
@@ -248,17 +364,22 @@ class Telemetry():
         return self.data_out[79]
 
     def getAccelerator(self):           #Gas pedal 0-255
-        return self.data_out[80] 
+        x = self.data_out[80]/255
+        return f'{x*100}%'
     def getBrake(self):                 #brake pedal 0-255
-        return self.data_out[81]
+        x = self.data_out[81]/255
+        return f'{x*100}%'
     def getClutch(self):                #clutch 0-255
-        return self.data_out[82]
+        x = self.data_out[82]/255
+        return f'{x*100}%'
     def getHandbrake(self):             #handbrake 0-255
-        return self.data_out[83]
+        x = self.data_out[83]/255
+        return f'{x*100}%'
     def getGear(self):
         return self.data_out[84]
-    def getSteer(self):                 #full left = -127, full right = 127 
-        return self.data_out[85]
+    def getSteer(self):                 #full left = -127, full right = 127
+        x = self.data_out[85]/127
+        return f'{x*100}%'
     def getNormalizedDrivingLine(self): 
         return self.data_out[86]
     def getNormalizedAIBrakeDifference(self): 
